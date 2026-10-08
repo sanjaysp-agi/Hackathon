@@ -1,0 +1,10 @@
+# Intelligent Workflow Manager — backend deps
+anthropic[bedrock]>=0.69
+boto3>=1.40            # fallback path + AWS_BEARER_TOKEN_BEDROCK support
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pandas>=2.2
+pyxlsb>=1.0            # read the shared .xlsb workbook
+python-dotenv>=1.0
+pydantic>=2.9
+pyyaml>=6.0

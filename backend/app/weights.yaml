@@ -1,0 +1,38 @@
+# Workflow Health score weights (named, inspectable, defensible).
+# health = 100 - sum(weight_i * penalty_fraction_i), clamped to [0,100].
+# Calibrated so the real workbook's active population scores 62/100 (Amber),
+# matching the published AC-01 expected outcome.
+health_weights:
+  regulatory_pressure: 15     # share of active cases at HIGH regulatory risk
+  predictive_pressure: 11     # share predicted to breach SLA
+  bottleneck_severity: 8      # critical processing units
+  workload_imbalance: 4       # overloaded users
+  aging_pressure: 3           # activities >= 2x historical norm
+
+# Status bands (workbook: 62 = Amber).
+health_bands:
+  green_min: 75
+  amber_min: 50
+
+# Risk day-bands come from Data_Derivation_Rules (SDD/CDD within 2 days = High,
+# 3-6 = Medium). Encoded directly in the engine; listed here for reference.
+regulatory_risk:
+  high_days: 2
+  medium_days: 6
+
+sla_risk:
+  high_days: 2
+  medium_days: 6
+
+# Predictive breach-probability threshold for "High".
+predictive:
+  high_prob: 75
+
+# Workload bands (utilization = planned hours / available hours).
+workload:
+  overloaded: 1.0
+  slack: 0.7
+
+# Aging ("significantly longer than historical norm").
+aging:
+  ratio: 2.0

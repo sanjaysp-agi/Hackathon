@@ -1,0 +1,20 @@
+# secrets
+.env
+
+# python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/lsmv.db
+backend/data/
+
+# node / vite
+frontend/node_modules/
+frontend/dist/
+
+# os
+.DS_Store
+HI.TXTX/
+
+.claude/settings.local.json

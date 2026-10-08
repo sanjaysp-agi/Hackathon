@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Intelligent Workflow Manager — EC2 (nginx + FastAPI + SQLite) behind an
+  Application Load Balancer with Cognito authentication. The ALB terminates
+  HTTPS (self-signed ACM cert), forces every request through a Cognito hosted
+  login, then forwards to the instance. Bedrock is reached via the instance
+  role. Code is delivered to the box as a tarball via a presigned S3 URL.
+
+Parameters:
+  CodeUrl:
+    Type: String
+    NoEcho: true
+    Description: Presigned S3 URL to the code tarball (the box curls this once).
+  CertificateArn:
+    Type: String
+    Description: ARN of the (self-signed) ACM certificate for the HTTPS listener.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy into (the default VPC is fine).
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Two or more public subnets in different AZs (for the ALB + instance).
+  AdminEmail:
+    Type: String
+    Description: Email/username for the Cognito dashboard login.
+  AdminPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Password for the Cognito admin user (min 8, needs upper/lower/number).
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues: [t3.small, t3.medium]
+  LatestAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  # ---- security groups -----------------------------------------------------
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: IWM ALB — public web
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+
+  InstanceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: IWM instance — only the ALB may reach nginx:80
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSg
+
+  # ---- instance role: Bedrock invoke only ----------------------------------
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bedrock-invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref Role ]
+
+  # ---- the box -------------------------------------------------------------
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmi
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Select [ 0, !Ref Subnets ]
+      SecurityGroupIds: [ !Ref InstanceSg ]
+      Tags:
+        - { Key: Name, Value: iwm-control-tower }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          cat >/etc/iwm.conf <<CONF
+          AUTH_MODE=cognito
+          APP_REGION=${AWS::Region}
+          CODE_URL=${CodeUrl}
+          CONF
+          # bootstrap.sh lives inside the tarball; fetch+extract just it first,
+          # then hand off. Simpler: pull the whole tarball here.
+          dnf -y install tar gzip
+          curl -fSL "${CodeUrl}" -o /tmp/iwm-code.tgz
+          mkdir -p /opt/iwm && tar -xzf /tmp/iwm-code.tgz -C /opt/iwm
+          bash /opt/iwm/deploy/bootstrap.sh > /var/log/iwm-bootstrap.log 2>&1
+
+  # ---- target group + ALB --------------------------------------------------
+  Tg:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /healthz
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Matcher: { HttpCode: "200" }
+      Targets:
+        - Id: !Ref Instance
+          Port: 80
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups: [ !Ref AlbSg ]
+      Subnets: !Ref Subnets
+
+  # HTTP :80 -> redirect to HTTPS :443
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  # HTTPS :443 -> authenticate via Cognito -> forward to the instance
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: authenticate-cognito
+          Order: 1
+          AuthenticateCognitoConfig:
+            UserPoolArn: !GetAtt UserPool.Arn
+            UserPoolClientId: !Ref UserPoolClient
+            UserPoolDomain: !Ref UserPoolDomain
+            OnUnauthenticatedRequest: authenticate
+            SessionTimeout: 3600
+        - Type: forward
+          Order: 2
+          TargetGroupArn: !Ref Tg
+
+  # ---- Cognito -------------------------------------------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "iwm-${AWS::StackName}"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true   # no public sign-up
+      AutoVerifiedAttributes: [ email ]
+      UsernameAttributes: [ email ]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: true               # required for the ALB cognito action
+      AllowedOAuthFlows: [ code ]
+      AllowedOAuthScopes: [ openid, email, profile ]
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders: [ COGNITO ]
+      CallbackURLs:
+        - !Sub "https://${Alb.DNSName}/oauth2/idpresponse"
+      LogoutURLs:
+        - !Sub "https://${Alb.DNSName}/"
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub "iwm-${AWS::AccountId}-${AWS::StackName}"
+
+  AdminUser:
+    Type: AWS::Cognito::UserPoolUser
+    Properties:
+      UserPoolId: !Ref UserPool
+      Username: !Ref AdminEmail
+      MessageAction: SUPPRESS            # don't try to email; we set the pw next
+      UserAttributes:
+        - { Name: email, Value: !Ref AdminEmail }
+        - { Name: email_verified, Value: "true" }
+
+Outputs:
+  URL:
+    Description: Open this in your browser; you'll hit the Cognito login first.
+    Value: !Sub "https://${Alb.DNSName}/"
+  UserPoolId:
+    Value: !Ref UserPool
+  AdminUsername:
+    Value: !Ref AdminEmail
+  LoginNote:
+    Value: "First open shows a cert warning (self-signed) — proceed; then log in."

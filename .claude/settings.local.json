@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat *)",
+      "Bash(cd *)",
+      "Bash(aws ec2 *)",
+      "Bash(aws bedrock-runtime *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\00990509\\OneDrive - ArisGlobal Software Pvt. Ltd.,\\Documents\\hack\\backend"
+    ]
+  }
+}

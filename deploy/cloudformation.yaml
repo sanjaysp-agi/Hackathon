@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Intelligent Workflow Manager — single EC2 box (nginx + FastAPI + SQLite),
+  Bedrock via an instance role. One stack = security group + IAM role + instance
+  that self-configures from your git repo. Open the instance's public URL when done.
+
+Parameters:
+  RepoUrl:
+    Type: String
+    Description: >
+      git clone URL of the repo. Public: https://github.com/you/iwm.git
+      Private: https://<TOKEN>@github.com/you/iwm.git
+  BasicUser:
+    Type: String
+    Default: admin
+    Description: Username for the dashboard login (HTTP Basic Auth).
+  BasicPass:
+    Type: String
+    NoEcho: true
+    Description: Password for the dashboard login.
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues: [t3.small, t3.medium]
+    Description: t3.medium if the frontend build is slow/OOMs; t3.small is fine otherwise.
+  LatestAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux 2023 AMI (resolved automatically — leave as is).
+
+Resources:
+  Sg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: IWM web access
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: bedrock-invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref Role ]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestAmi
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [ !Ref Sg ]
+      Tags:
+        - { Key: Name, Value: iwm-control-tower }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          cat >/etc/iwm.conf <<CONF
+          REPO_URL=${RepoUrl}
+          APP_REGION=${AWS::Region}
+          BASIC_USER=${BasicUser}
+          BASIC_PASS=${BasicPass}
+          CONF
+          dnf -y install git
+          git clone ${RepoUrl} /opt/iwm
+          bash /opt/iwm/deploy/bootstrap.sh > /var/log/iwm-bootstrap.log 2>&1
+
+Outputs:
+  URL:
+    Description: Open this in your browser (then enter the Basic Auth login).
+    Value: !Sub "http://${Instance.PublicDnsName}/"
+  SSH:
+    Description: If you need to debug — logs are in /var/log/iwm-bootstrap.log
+    Value: !Sub "ec2: ${Instance.PublicIp}"

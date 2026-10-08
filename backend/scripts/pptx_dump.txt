@@ -1,0 +1,24 @@
+--- SLIDE 1 ---
+Intelligent Workflow Manager | Oct  | 2026 |  Hackathon
+
+--- SLIDE 2 ---
+EXISTING CASE PROCESSOR DASHBOARD
+
+--- SLIDE 3 ---
+EXISTING SMART WORKFLOW DASHBOARD
+
+--- SLIDE 4 ---
+What a PV Operations Manager should see when they open the solution | WORKFLOW HEALTH | 92% | Healthy | REGULATORY RISK | 12 | Cases at risk | SLA RISK | 8 | Predicted breaches | BOTTLENECKS | 3 | Need attention | WORKLOAD | 2 | Teams overloaded | PRIORITY ITEMS | 12 cases | High risk of missing reporting deadline | 5 cases | Delayed in Medical Review | Person A | 125% workload capacity | 3 cases | Stuck longer than historical norm | AI RECOMMENDED ACTIONS | 1 | Prioritize 12 high-risk cases | 2 | Reassign 3 Medical Review cases | 3 | Review Person A's workload | 4 | Monitor 3 aging activities | Human approval required for actions | INTELLIGENT WORKFLOW MANAGER
+
+--- SLIDE 5 ---
+Move from a risk signal to the exact reason and recommended action | Dashboard  →  Regulatory Risk  →  Medical Review  →  Case 123456  →  Activity | CASE 123456 — HIGH RISK | Reporting due | 14-Oct-2026 | Current activity | Medical Review | Aging | 6.2 days | Historical norm | 2.5 days | WHY IS IT AT RISK? | Medical Review aging is 2.5× historical norm and the reporting deadline is approaching. | AI EXPLANATION &amp; NEXT BEST ACTION | Risk reason | “This case is likely to miss its reporting deadline because Medical Review is significantly slower than the historical baseline.” | Recommended action | Prioritize or reassign Medical Review | Supporting evidence | Historical turnaround • current aging • due date • reviewer workload • case complexity | Explainable • Auditable • Human-controlled | FROM DASHBOARD TO ROOT CAUSE
+
+--- SLIDE 6 ---
+Managers can ask questions in natural language instead of searching through multiple reports | ASK THE WORKFLOW MANAGER | Which cases are most likely to miss their regulatory deadline? | I found 12 high-risk cases. The main drivers are: | • 5 cases delayed in Medical Review   • 4 cases with limited remaining time   • 3 cases with unusual workflow aging | Why is Medical Review a bottleneck today? | AI identifies the cause, shows the supporting data, and suggests practical actions — without making the decision for the manager. | THE IDEAL AGENTIC EXPERIENCE
+
+--- SLIDE 7 ---
+The solution should be proactive, explainable and useful in the manager’s daily work | SEE | One view of overall workflow health and priority risks | PREDICT | Identify regulatory and SLA risks before they become overdue | EXPLAIN | Clearly show why a case, team or activity is at risk | ACT | Recommend the next best action — prioritize, reassign, escalate or monitor | DRILL DOWN | Move from dashboard → team → case → activity | CONTROL | Keep AI recommendations explainable, auditable and human-controlled | What happened?  →  What is happening?  →  What will likely happen?  →  What should I do? | WHAT “GOOD” LOOKS LIKE
+
+--- SLIDE 8 ---
+
+
